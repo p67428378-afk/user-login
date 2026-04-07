@@ -1,25 +1,22 @@
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.orm import sessionmaker
+from fastapi.testclient import TestClient
 
 from backend.main import app
 from backend.database import Base, get_db
+from backend.models import User
 
-# Setup for in-memory SQLite database for testing
+# Use an in-memory SQLite database for testing
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
 
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
+    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
 )
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-
-@pytest.fixture(name="db_session")
-def db_session_fixture():
+@pytest.fixture(name="session")
+def session_fixture():
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
     try:
@@ -28,15 +25,11 @@ def db_session_fixture():
         db.close()
         Base.metadata.drop_all(bind=engine)
 
-
 @pytest.fixture(name="client")
-def client_fixture(db_session: Session):
+def client_fixture(session):
     def override_get_db():
-        try:
-            yield db_session
-        finally:
-            db_session.close()
-
+        yield session
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as client:
         yield client
+    app.dependency_overrides.clear()
